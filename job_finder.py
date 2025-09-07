@@ -81,7 +81,15 @@ def filter_jobs(jobs):
             continue
 
         # Visa/Relocation detection
-        visa_support = "yes" if ("relocation" in description or "visa" in description) else "no"
+        # Convert description to lowercase
+        desc = description.lower()
+
+        # ✅ Only mark as yes if it explicitly indicates support
+        if any(keyword in desc for keyword in ["relocation assistance", "relocation support", "visa sponsorship", "visa support", "visa sponsorship provided", "relocation assistance", "relocation support", "visa sponsorship", "visa support", "visa sponsorship provided", "we provide visa", "we sponsor visa", "relocation offered"]):
+            visa_support = "yes"
+        else:
+            visa_support = "no"
+
 
         # ✅ For Global workflow, skip jobs without visa/relocation
         if WORKFLOW_NAME == "Global Jobs" and visa_support == "no":
