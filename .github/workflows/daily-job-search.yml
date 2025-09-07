@@ -1,5 +1,8 @@
 name: Daily Job Search (20:00 IST)
 
+- name: Install dependencies
+  run: pip install -r requirements.txt
+
 on:
   schedule:
     # 20:00 IST == 14:30 UTC
