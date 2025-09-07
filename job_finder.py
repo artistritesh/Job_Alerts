@@ -84,24 +84,32 @@ def search_jobs(query, location):
 # ---------------------------
 # Send email
 # ---------------------------
-def send_email(job_data):
-    df = pd.DataFrame(job_data)
-    if df.empty:
-        body = "<p>No new job postings found today.</p>"
-    else:
-        body = df.to_html(index=False, escape=False)
+def send_email(filtered_jobs):
+    if not filtered_jobs:
+        print("No jobs to send.")
+        return
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Daily Job Alerts"
     msg["From"] = f"{SENDER_NAME} <{SENDER_EMAIL}>"
     msg["To"] = ", ".join(RECIPIENT_EMAILS)
 
-    part = MIMEText(body, "html")
-    msg.attach(part)
+    html_content = "<h2>Daily Job Alerts</h2><ul>"
+    for job in filtered_jobs:
+        html_content += f'<li><a href="{job["link"]}">{job["title"]}</a> - {job["company"]} ({job["location"]})</li>'
+    html_content += "</ul>"
 
-    with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
-        server.login(SMTP_USERNAME, SMTP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECIPIENT_EMAILS, msg.as_string())
+    msg.attach(MIMEText(html_content, "html"))
+
+    try:
+        # ✅ Correct for SendGrid (port 587 + STARTTLS)
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.sendmail(SENDER_EMAIL, RECIPIENT_EMAILS, msg.as_string())
+        print("✅ Email sent successfully via SendGrid!")
+    except Exception as e:
+        print("❌ Email sending failed:", e)
 
 # ---------------------------
 # Main
