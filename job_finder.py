@@ -4,7 +4,7 @@ import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
-from serpapi import GoogleSearch   # ✅ Correct import for SerpApi
+from serpapi import GoogleSearch  # ✅ Correct import
 
 # ----------------- ENV VARIABLES -----------------
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
@@ -21,9 +21,12 @@ MAX_RESULTS_PER_QUERY = int(os.getenv("MAX_RESULTS_PER_QUERY", "20") or 20)
 DAYS_BACK_LIMIT = int(os.getenv("DAYS_BACK_LIMIT", "7") or 7)
 STRICT_MATCH = os.getenv("STRICT_MATCH", "false").lower() == "true"
 
-WORKFLOW_NAME = os.getenv("WORKFLOW_NAME", "Global Jobs")  # ✅ Differentiate Pune vs Global
+WORKFLOW_NAME = os.getenv("WORKFLOW_NAME", "Global Jobs")  # Used in email subject
+JOB_LOCATIONS = os.getenv("JOB_LOCATIONS", "").split(",")
+if not JOB_LOCATIONS or JOB_LOCATIONS == [""]:
+    JOB_LOCATIONS = ["United States", "Europe", "Australia", "New Zealand"]
 
-print(f"DEBUG ENV VALUES: MAX_RESULTS_PER_QUERY='{MAX_RESULTS_PER_QUERY}' DAYS_BACK_LIMIT='{DAYS_BACK_LIMIT}' SMTP_PORT='{SMTP_PORT}' WORKFLOW='{WORKFLOW_NAME}'")
+print(f"DEBUG ENV: MAX_RESULTS_PER_QUERY={MAX_RESULTS_PER_QUERY}, DAYS_BACK_LIMIT={DAYS_BACK_LIMIT}, WORKFLOW={WORKFLOW_NAME}")
 
 # ----------------- SEARCH CONFIG -----------------
 QUERIES = [
@@ -32,10 +35,6 @@ QUERIES = [
     "Scrum Master",
     "Project Manager",
 ]
-
-LOCATIONS = os.getenv("JOB_LOCATIONS", "").split(",")
-if not LOCATIONS or LOCATIONS == [""]:
-    LOCATIONS = ["United States", "Europe", "Australia", "New Zealand"]
 
 # ----------------- FETCH JOBS -----------------
 def fetch_jobs(query, location):
@@ -122,7 +121,7 @@ def send_email(jobs):
 if __name__ == "__main__":
     all_jobs = []
     for query in QUERIES:
-        for location in LOCATIONS:
+        for location in JOB_LOCATIONS:
             all_jobs.extend(fetch_jobs(query, location))
 
     filtered_jobs = filter_jobs(all_jobs)
