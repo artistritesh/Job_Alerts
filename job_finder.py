@@ -5,6 +5,18 @@ from email.mime.text import MIMEText
 from serpapi import GoogleSearch
 from datetime import datetime, timedelta
 
+
+#Pune#
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--keywords", type=str, default="Agile Program Manager,Program Manager,Scrum Master,Project Manager")
+parser.add_argument("--locations", type=str, default="United States,Europe,Australia,New Zealand")
+args = parser.parse_args()
+
+SEARCH_KEYWORDS = [kw.strip() for kw in args.keywords.split(",")]
+SEARCH_LOCATIONS = [loc.strip() for loc in args.locations.split(",")]
+#Pune End#
+
 # ====== Load ENV Variables ======
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")

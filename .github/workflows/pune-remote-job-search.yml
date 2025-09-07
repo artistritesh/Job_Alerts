@@ -1,0 +1,39 @@
+name: Pune & Remote Job Search
+
+on:
+  schedule:
+    - cron: "30 6 * * *"   # Runs daily at 12:00 PM IST
+  workflow_dispatch:
+
+jobs:
+  search-jobs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Pune/Remote Job Finder
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_NAME: ${{ secrets.SENDER_NAME }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
+          MAX_RESULTS_PER_QUERY: "20"
+          DAYS_BACK_LIMIT: "7"
+          STRICT_MATCH: "false"
+        run: |
+          python job_finder.py --keywords "Agile Program Manager,Program Manager,Scrum Master,Project Manager" --locations "Pune,Remote"
