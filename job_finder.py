@@ -2,7 +2,7 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from serpapi import GoogleSearch
+from serpapi.google_search_results import GoogleSearch   # ✅ FIXED IMPORT
 from datetime import datetime, timedelta
 
 # ✅ Load ENV vars with defaults
