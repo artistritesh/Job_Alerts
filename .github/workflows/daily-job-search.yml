@@ -1,6 +1,6 @@
 name: Daily Job Search (20:00 IST)
 
-- name: Install dependencies
+  name: Install dependencies
   run: pip install -r requirements.txt
 
 on:
