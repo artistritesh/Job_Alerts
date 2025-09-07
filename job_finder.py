@@ -81,7 +81,7 @@ def filter_jobs(jobs):
             continue
 
         # ✅ Only include jobs that mention relocation or visa
-        visa_support = "yes" if ("relocation" in description or "visa" in description) else "no"
+        visa_support = "yes" if ("relocation" in description or "visa" in description or "sponsership" in description) else "no"
 
         filtered.append({
             "title": job.get("title", "No title"),
@@ -102,7 +102,7 @@ def send_email(jobs):
     subject = f"📢 {WORKFLOW_NAME} - {len(jobs)} new jobs found"
     body = f"<h3>Here are the latest {WORKFLOW_NAME} jobs:</h3><ul>"
     for job in jobs:
-        body += f'<li><a href="{job["link"]}">{job["title"]}</a> - {job["company"]} ({job["location"]})</li>'
+        body += f'<li><a href="{job["link"]}">{job["title"]}</a> - {job["company"]} ({job["location"]}) | Visa/Relocation: {job["visa_support"]}</li>'
     body += "</ul>"
 
     message = MIMEMultipart()
