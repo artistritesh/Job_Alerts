@@ -255,7 +255,3 @@ def getenv_int(name: str, default: int) -> int:
 SMTP_PORT = getenv_int("SMTP_PORT", 465)
 MAX_RESULTS_PER_QUERY = getenv_int("MAX_RESULTS_PER_QUERY", 20)
 DAYS_BACK_LIMIT = getenv_int("DAYS_BACK_LIMIT", 14)
-
-print("SMTP_PORT:", repr(os.getenv("SMTP_PORT")))
-print("MAX_RESULTS_PER_QUERY:", repr(os.getenv("MAX_RESULTS_PER_QUERY")))
-print("DAYS_BACK_LIMIT:", repr(os.getenv("DAYS_BACK_LIMIT")))
