@@ -96,8 +96,13 @@ def send_email(filtered_jobs):
 
     html_content = "<h2>Daily Job Alerts</h2><ul>"
     for job in filtered_jobs:
-        html_content += f'<li><a href="{job["link"]}">{job["title"]}</a> - {job["company"]} ({job["location"]})</li>'
+        title = job.get("title", "No title")
+        company = job.get("company", "Unknown company")
+        location = job.get("location", "Unknown location")
+        link = job.get("link", "#")  # fallback to "#" if no link
+        html_content += f'<li><a href="{link}">{title}</a> - {company} ({location})</li>'
     html_content += "</ul>"
+
 
     msg.attach(MIMEText(html_content, "html"))
 
