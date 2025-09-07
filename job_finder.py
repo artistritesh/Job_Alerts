@@ -57,12 +57,12 @@ SERPAPI_KEY = os.getenv("SERPAPI_KEY", "").strip()
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "").strip()
 SENDER_NAME  = os.getenv("SENDER_NAME", "JobBot").strip()
 SMTP_SERVER  = os.getenv("SMTP_SERVER", "smtp.gmail.com").strip()
-SMTP_PORT    = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USERNAME= os.getenv("SMTP_USERNAME", SENDER_EMAIL).strip()
 SMTP_PASSWORD= os.getenv("SMTP_PASSWORD", "").strip()
 RECIPIENTS   = [e.strip() for e in os.getenv("RECIPIENT_EMAILS", "").split(",") if e.strip()]
 MAX_RESULTS_PER_QUERY = int(os.getenv("MAX_RESULTS_PER_QUERY", "20"))
-DAYS_BACK_LIMIT = int(os.getenv("DAYS_BACK_LIMIT", "14"))  # ignore jobs older than this many days if 'detected_extensions' has posted_at
+DAYS_BACK_LIMIT = int(os.getenv("DAYS_BACK_LIMIT", "14"))
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 STRICT_MATCH = os.getenv("STRICT_MATCH", "false").lower() == "true"  # if true, require keywords in title or description
 
 # Logging
@@ -249,12 +249,16 @@ if __name__ == "__main__":
 
 
 def getenv_int(name: str, default: int) -> int:
-    val = os.getenv(name, "").strip()
-    return int(val) if val.isdigit() else default
+    val = os.getenv(name, "")
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
 
-SMTP_PORT = getenv_int("SMTP_PORT", 465)
 MAX_RESULTS_PER_QUERY = getenv_int("MAX_RESULTS_PER_QUERY", 20)
 DAYS_BACK_LIMIT = getenv_int("DAYS_BACK_LIMIT", 14)
+SMTP_PORT = getenv_int("SMTP_PORT", 465)
+
 
 print("SMTP_PORT:", repr(os.getenv("SMTP_PORT")))
 print("MAX_RESULTS_PER_QUERY:", repr(os.getenv("MAX_RESULTS_PER_QUERY")))
