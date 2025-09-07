@@ -80,8 +80,12 @@ def filter_jobs(jobs):
         if STRICT_MATCH and not any(q.lower() in title for q in QUERIES):
             continue
 
-        # ✅ Only include jobs that mention relocation or visa
-        visa_support = "yes" if ("relocation" in description or "visa" in description or "sponsership" in description) else "no"
+        # Visa/Relocation detection
+        visa_support = "yes" if ("relocation" in description or "visa" in description) else "no"
+
+        # ✅ For Global workflow, skip jobs without visa/relocation
+        if WORKFLOW_NAME == "Global Jobs" and visa_support == "no":
+            continue
 
         filtered.append({
             "title": job.get("title", "No title"),
