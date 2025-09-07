@@ -84,37 +84,32 @@ def search_jobs(query, location):
 # ---------------------------
 # Send email
 # ---------------------------
-def send_email(filtered_jobs):
-    if not filtered_jobs:
-        print("No jobs to send.")
+def send_email(jobs):
+    if not jobs:
+        print("⚠️ No jobs found today, skipping email.")
         return
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Daily Job Alerts"
     msg["From"] = f"{SENDER_NAME} <{SENDER_EMAIL}>"
-    msg["To"] = ", ".join(RECIPIENT_EMAILS)
+    msg["To"] = ", ".join(RECIPIENT_EMAILS.split(","))
 
-    html_content = "<h2>Daily Job Alerts</h2><ul>"
-    for job in filtered_jobs:
-        title = job.get("title", "No title")
-        company = job.get("company", "Unknown company")
-        location = job.get("location", "Unknown location")
-        link = job.get("link", "#")  # fallback to "#" if no link
-        html_content += f'<li><a href="{link}">{title}</a> - {company} ({location})</li>'
+    html_content = "<h2>Job Alerts</h2><ul>"
+    for job in jobs:
+        html_content += f'<li><a href="{job["link"]}">{job["title"]}</a> - {job["company"]} ({job["location"]})</li>'
     html_content += "</ul>"
-
 
     msg.attach(MIMEText(html_content, "html"))
 
     try:
-        # ✅ Correct for SendGrid (port 587 + STARTTLS)
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
+        with smtplib.SMTP(SMTP_SERVER, int(SMTP_PORT)) as server:
+            server.starttls()  # Gmail requires TLS
             server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.sendmail(SENDER_EMAIL, RECIPIENT_EMAILS, msg.as_string())
-        print("✅ Email sent successfully via SendGrid!")
+            server.sendmail(SENDER_EMAIL, RECIPIENT_EMAILS.split(","), msg.as_string())
+        print(f"✅ Sent {len(jobs)} jobs via Gmail")
     except Exception as e:
-        print("❌ Email sending failed:", e)
+        print(f"❌ Gmail sending failed: {e}")
+
 
 # ---------------------------
 # Main
@@ -129,6 +124,7 @@ if __name__ == "__main__":
 
     # Filter only visa/relocation supported jobs
     filtered = [j for j in all_jobs if j["Visa/Relocation Sponsorship"] == "Yes"]
+    print(f"DEBUG: Jobs found = {len(filtered_jobs)}")
 
     send_email(filtered)
     print(f"✅ Sent {len(filtered)} jobs via email")
