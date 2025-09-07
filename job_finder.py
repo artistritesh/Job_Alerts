@@ -1,65 +1,32 @@
 import os
-import requests
-import pandas as pd
 import smtplib
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from serpapi import GoogleSearch
+from datetime import datetime, timedelta
 
-# ---------------------------
-# Safe int getter for env vars
-# ---------------------------
-def getenv_int(name: str, default: int) -> int:
-    val = os.getenv(name, "")
-    try:
-        return int(val)
-    except (TypeError, ValueError):
-        return default
-
-# ---------------------------
-# Load configuration
-# ---------------------------
+# ====== Load ENV Variables ======
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-SENDER_NAME = os.getenv("SENDER_NAME", "Job Bot").replace("_", " ")
+SENDER_NAME = os.getenv("SENDER_NAME", "Job Alerts Bot")
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = getenv_int("SMTP_PORT", 465)
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))  # Gmail uses 587
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-RECIPIENT_EMAILS = os.getenv("RECIPIENT_EMAILS", "").split(",")
+RECIPIENT_EMAILS = os.getenv("RECIPIENT_EMAILS", "")
 
-MAX_RESULTS_PER_QUERY = getenv_int("MAX_RESULTS_PER_QUERY", 20)
-DAYS_BACK_LIMIT = getenv_int("DAYS_BACK_LIMIT", 14)
+MAX_RESULTS_PER_QUERY = int(os.getenv("MAX_RESULTS_PER_QUERY", "20") or 20)
+DAYS_BACK_LIMIT = int(os.getenv("DAYS_BACK_LIMIT", "7") or 7)
 STRICT_MATCH = os.getenv("STRICT_MATCH", "false").lower() == "true"
 
-# Debug logging for safety
-print("DEBUG ENV VALUES:",
-      "MAX_RESULTS_PER_QUERY=", repr(os.getenv("MAX_RESULTS_PER_QUERY")),
-      "DAYS_BACK_LIMIT=", repr(os.getenv("DAYS_BACK_LIMIT")),
-      "SMTP_PORT=", repr(os.getenv("SMTP_PORT")))
+print(f"DEBUG ENV VALUES: MAX_RESULTS_PER_QUERY='{MAX_RESULTS_PER_QUERY}' DAYS_BACK_LIMIT='{DAYS_BACK_LIMIT}' SMTP_PORT='{SMTP_PORT}'")
 
-# ---------------------------
-# Job search configuration
-# ---------------------------
-QUERIES = [
-    "Agile Program Manager jobs",
-    "Program Manager jobs",
-    "Scrum Master jobs",
-    "Project Manager jobs"
-]
+# ====== Search Config ======
+QUERIES = ["Agile Program Manager", "Program Manager", "Scrum Master", "Project Manager"]
+REGIONS = ["United States", "Europe", "Australia", "New Zealand"]
 
-REGIONS = [
-    "United States",
-    "Europe",
-    "Australia",
-    "New Zealand"
-]
-
-# ---------------------------
-# Search jobs using SerpAPI
-# ---------------------------
+# ====== Functions ======
 def search_jobs(query, location):
-    url = "https://serpapi.com/search"
     params = {
         "engine": "google_jobs",
         "q": query,
@@ -67,23 +34,45 @@ def search_jobs(query, location):
         "hl": "en",
         "api_key": SERPAPI_KEY
     }
-    resp = requests.get(url, params=params)
-    data = resp.json()
+    search = GoogleSearch(params)
+    results = search.get_dict()
+    jobs = results.get("jobs_results", [])
+    return jobs[:MAX_RESULTS_PER_QUERY]
 
-    jobs = []
-    for j in data.get("jobs_results", []):
-        jobs.append({
-            "Company": j.get("company_name", ""),
-            "Job Title": j.get("title", ""),
-            "Location": j.get("location", ""),
-            "Visa/Relocation Sponsorship": "Yes" if "visa" in j.get("description", "").lower() or "relocation" in j.get("description", "").lower() else "No",
-            "Application Link": j.get("apply_options", [{}])[0].get("link", "")
+def filter_jobs(jobs):
+    cutoff_date = datetime.now() - timedelta(days=DAYS_BACK_LIMIT)
+    filtered = []
+    for job in jobs:
+        title = job.get("title", "").lower()
+        company = job.get("company_name", "Unknown")
+        location = job.get("location", "Unknown")
+        link = job.get("apply_options", [{}])[0].get("link", "")
+
+        if not link:  # Skip jobs without a valid application link
+            continue
+
+        desc = " ".join([e.get("description", "") for e in job.get("detected_extensions", [])]).lower()
+        date_str = job.get("detected_extensions", {}).get("posted_at", "")
+        try:
+            posted_at = datetime.strptime(date_str, "%Y-%m-%d")
+        except:
+            posted_at = datetime.now()
+
+        if posted_at < cutoff_date:
+            continue
+
+        visa_keywords = ["visa", "relocation", "sponsorship", "work permit"]
+        visa_support = "Yes" if any(kw in desc for kw in visa_keywords) else "No"
+
+        filtered.append({
+            "title": job.get("title", "N/A"),
+            "company": company,
+            "location": location,
+            "visa": visa_support,
+            "link": link
         })
-    return jobs
+    return filtered
 
-# ---------------------------
-# Send email
-# ---------------------------
 def send_email(jobs):
     if not jobs:
         print("⚠️ No jobs found today, skipping email.")
@@ -96,34 +85,30 @@ def send_email(jobs):
 
     html_content = "<h2>Job Alerts</h2><ul>"
     for job in jobs:
-        html_content += f'<li><a href="{job["link"]}">{job["title"]}</a> - {job["company"]} ({job["location"]})</li>'
+        html_content += f'<li><a href="{job["link"]}">{job["title"]}</a> - {job["company"]} ({job["location"]}) | Visa/Relocation: {job["visa"]}</li>'
     html_content += "</ul>"
 
     msg.attach(MIMEText(html_content, "html"))
 
     try:
-        with smtplib.SMTP(SMTP_SERVER, int(SMTP_PORT)) as server:
-            server.starttls()  # Gmail requires TLS
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
             server.login(SMTP_USERNAME, SMTP_PASSWORD)
             server.sendmail(SENDER_EMAIL, RECIPIENT_EMAILS.split(","), msg.as_string())
         print(f"✅ Sent {len(jobs)} jobs via Gmail")
     except Exception as e:
         print(f"❌ Gmail sending failed: {e}")
 
-# ---------------------------
-# Main
-# ---------------------------
+# ====== Main ======
 if __name__ == "__main__":
     all_jobs = []
     for query in QUERIES:
         for region in REGIONS:
-            print(f"Searching: {query} in {region}")
+            print(f"Searching: {query} jobs in {region}")
             jobs = search_jobs(query, region)
             all_jobs.extend(jobs)
 
-    # Filter only visa/relocation supported jobs
-    filtered = [j for j in all_jobs if j["Visa/Relocation Sponsorship"] == "Yes"]
+    filtered_jobs = filter_jobs(all_jobs)
     print(f"DEBUG: Jobs found = {len(filtered_jobs)}")
 
-    send_email(filtered)
-    print(f"✅ Sent {len(filtered)} jobs via email")
+    send_email(filtered_jobs)
