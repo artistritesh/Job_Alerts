@@ -4,7 +4,7 @@ import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
-from google_search_results import GoogleSearch   # ✅ Correct import
+from serpapi import GoogleSearch   # ✅ Correct import for SerpApi
 
 # ----------------- ENV VARIABLES -----------------
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
