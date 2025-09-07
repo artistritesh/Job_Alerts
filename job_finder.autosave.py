@@ -10,7 +10,7 @@ SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 SENDER_NAME = os.getenv("SENDER_NAME", "Job Alerts Bot")
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))  # Gmail uses 587
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 RECIPIENT_EMAILS = os.getenv("RECIPIENT_EMAILS", "")
@@ -48,10 +48,23 @@ def filter_jobs(jobs):
         location = job.get("location", "Unknown")
         link = job.get("apply_options", [{}])[0].get("link", "")
 
-        if not link:  # Skip jobs without a valid application link
+        if not link:
             continue
 
-        desc = " ".join([e.get("description", "") for e in job.get("detected_extensions", [])]).lower()
+        # Safely get description text
+        detected_ext = job.get("detected_extensions", [])
+        if isinstance(detected_ext, list):
+            desc_parts = []
+            for e in detected_ext:
+                if isinstance(e, dict):
+                    desc_parts.append(e.get("description", ""))
+                elif isinstance(e, str):
+                    desc_parts.append(e)
+            desc = " ".join(desc_parts).lower()
+        else:
+            desc = str(detected_ext).lower()
+
+        # Handle posted date
         date_str = job.get("detected_extensions", {}).get("posted_at", "")
         try:
             posted_at = datetime.strptime(date_str, "%Y-%m-%d")
@@ -72,6 +85,7 @@ def filter_jobs(jobs):
             "link": link
         })
     return filtered
+
 
 def send_email(jobs):
     if not jobs:

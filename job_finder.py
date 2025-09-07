@@ -51,12 +51,28 @@ def filter_jobs(jobs):
         if not link:
             continue
 
-        desc = " ".join([e.get("description", "") for e in job.get("detected_extensions", [])]).lower()
+        # Safely get description text
+        detected_ext = job.get("detected_extensions", [])
+        if isinstance(detected_ext, list):
+            desc_parts = []
+            for e in detected_ext:
+                if isinstance(e, dict):
+                    desc_parts.append(e.get("description", ""))
+                elif isinstance(e, str):
+                    desc_parts.append(e)
+            desc = " ".join(desc_parts).lower()
+        else:
+            desc = str(detected_ext).lower()
+
+        # Handle posted date
         date_str = job.get("detected_extensions", {}).get("posted_at", "")
         try:
             posted_at = datetime.strptime(date_str, "%Y-%m-%d")
         except:
             posted_at = datetime.now()
+
+        if posted_at < cutoff_date:
+            continue
 
         visa_keywords = ["visa", "relocation", "sponsorship", "work permit"]
         visa_support = "Yes" if any(kw in desc for kw in visa_keywords) else "No"
@@ -69,6 +85,7 @@ def filter_jobs(jobs):
             "link": link
         })
     return filtered
+
 
 def send_email(jobs):
     if not jobs:
