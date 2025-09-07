@@ -3,7 +3,7 @@ import argparse
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from serpapi import GoogleSearch
+from serpapi.google_search_results import GoogleSearch   #✅ FIXED IMPORT
 
 # ------------------- CLI Arguments -------------------
 parser = argparse.ArgumentParser()
