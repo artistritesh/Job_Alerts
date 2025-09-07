@@ -1,32 +1,27 @@
-name: Daily Job Search (20:00 IST)
+name: Daily Job Search
 
 on:
   schedule:
-    # 20:00 IST == 14:30 UTC
-    - cron: "30 14 * * *"
+    - cron: '0 14 * * *'  # 8 PM IST = 14:30 UTC
   workflow_dispatch:
 
 jobs:
-  run:
+  job_search:
     runs-on: ubuntu-latest
-    steps:
-      - name: Install dependencies
-        run: pip install -r requirements.txt
 
+    steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests pandas
+        run: pip install google-search-results
 
-      - name: Run job finder
+      - name: Run Job Finder
         env:
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
@@ -36,7 +31,7 @@ jobs:
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
-          MAX_RESULTS_PER_QUERY: ${{ vars.MAX_RESULTS_PER_QUERY }}
-          DAYS_BACK_LIMIT: ${{ vars.DAYS_BACK_LIMIT }}
-          STRICT_MATCH: ${{ vars.STRICT_MATCH }}
+          MAX_RESULTS_PER_QUERY: ${{ secrets.MAX_RESULTS_PER_QUERY }}
+          DAYS_BACK_LIMIT: ${{ secrets.DAYS_BACK_LIMIT }}
+          STRICT_MATCH: ${{ secrets.STRICT_MATCH }}
         run: python job_finder.py
