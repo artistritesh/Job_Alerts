@@ -1,0 +1,5 @@
+google-search-results
+
+
+- name: Install SerpAPI client
+  run: pip install google-search-results
