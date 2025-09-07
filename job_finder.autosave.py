@@ -93,6 +93,7 @@ def filter_jobs(jobs):
 
     return filtered
 
+
 # ----------------- SEND EMAIL -----------------
 def send_email(jobs):
     if not jobs:
