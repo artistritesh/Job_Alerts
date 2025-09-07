@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
-        run: pip install -r requirements.txt
+          run: pip install -r requirements.txt
 
       - name: Checkout repo
         uses: actions/checkout@v4
