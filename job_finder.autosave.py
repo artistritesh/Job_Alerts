@@ -1,253 +1,13 @@
-#!/usr/bin/env python3
-"""
-Job Search & Email Automation
-- Queries SerpAPI Google Jobs for target roles across regions (US, Europe, Australia, New Zealand)
-- Filters postings that mention visa sponsorship or relocation support
-- Outputs a concise table and emails it
-Schedule: daily at 20:00 IST via GitHub Actions (or any scheduler)
-"""
 import os
-import sys
-import time
-import json
+import requests
+import pandas as pd
 import smtplib
-import ssl
-import logging
-from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import List, Dict, Any
-from datetime import datetime, timezone, timedelta
+from email.mime.multipart import MIMEMultipart
 
-try:
-    import requests
-    import pandas as pd
-except ModuleNotFoundError:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "requests", "pandas"])
-    import requests
-    import pandas as pd
-
-# ------------------ Config ------------------
-SEARCH_TERMS = [
-    "Agile Program Manager",
-    "Program Manager",
-    "Scrum Master",
-    "Project Manager"
-]
-
-# Regions & locations for Google Jobs (SerpAPI). You can add cities for better coverage.
-REGIONS = [
-    {"label": "United States", "location": "United States"},
-    {"label": "Europe", "location": "Europe"},
-    {"label": "Australia", "location": "Australia"},
-    {"label": "New Zealand", "location": "New Zealand"}
-]
-
-# Keywords that imply visa sponsorship or relocation
-KEYWORDS_ANY = [
-    "visa", "sponsorship", "sponsor", "work permit", "work authorization",
-    "work authorisation", "relocation", "relocation support", "relocation assistance",
-    "relocation package", "relocation bonus", "visa support"
-]
-
-# Email table columns
-COLUMNS = ["Company Name", "Job Title", "Location", "Visa/Relocation Sponsorship (Yes/No)", "Application Link"]
-
-SERPAPI_KEY = os.getenv("SERPAPI_KEY", "").strip()
-SENDER_EMAIL = os.getenv("SENDER_EMAIL", "").strip()
-SENDER_NAME  = os.getenv("SENDER_NAME", "JobBot").strip()
-SMTP_SERVER  = os.getenv("SMTP_SERVER", "smtp.gmail.com").strip()
-SMTP_USERNAME= os.getenv("SMTP_USERNAME", SENDER_EMAIL).strip()
-SMTP_PASSWORD= os.getenv("SMTP_PASSWORD", "").strip()
-RECIPIENTS   = [e.strip() for e in os.getenv("RECIPIENT_EMAILS", "").split(",") if e.strip()]
-MAX_RESULTS_PER_QUERY = int(os.getenv("MAX_RESULTS_PER_QUERY", "20"))
-DAYS_BACK_LIMIT = int(os.getenv("DAYS_BACK_LIMIT", "14"))
-SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
-STRICT_MATCH = os.getenv("STRICT_MATCH", "false").lower() == "true"  # if true, require keywords in title or description
-
-# Logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s - %(message)s")
-logger = logging.getLogger("jobfinder")
-
-def serpapi_jobs_search(query: str, location: str, api_key: str, start: int = 0) -> Dict[str, Any]:
-    url = "https://serpapi.com/search.json"
-    params = {
-        "engine": "google_jobs",
-        "q": query,
-        "location": location,
-        "hl": "en",
-        "start": start,
-        "api_key": api_key
-    }
-    r = requests.get(url, params=params, timeout=30)
-    r.raise_for_status()
-    return r.json()
-
-def serpapi_job_detail(job_id: str, api_key: str) -> Dict[str, Any]:
-    url = "https://serpapi.com/search.json"
-    params = {
-        "engine": "google_jobs_listing",
-        "q": job_id,
-        "hl": "en",
-        "api_key": api_key
-    }
-    r = requests.get(url, params=params, timeout=30)
-    r.raise_for_status()
-    return r.json()
-
-def posted_within_limit(job: Dict[str, Any], days: int) -> bool:
-    ext = job.get("detected_extensions", {}) or {}
-    posted_at = ext.get("posted_at") or ext.get("posted_at_raw")
-    if not posted_at:
-        return True  # keep if unknown
-    # Lightweight parse: handle patterns like "1 day ago", "3 days ago", "30+ days ago"
-    try:
-        txt = str(posted_at).lower()
-        if "day" in txt:
-            num = "".join(ch for ch in txt if ch.isdigit())
-            if num:
-                return int(num) <= days
-            if "30+" in txt:
-                return 30 <= days
-        # if it's a date-like string, keep it
-        return True
-    except Exception:
-        return True
-
-def contains_keywords(text: str) -> bool:
-    t = (text or "").lower()
-    return any(kw in t for kw in KEYWORDS_ANY)
-
-def extract_apply_link(job: Dict[str, Any]) -> str:
-    # Prefer direct apply option
-    for opt in job.get("apply_options", []) or []:
-        if opt.get("link"):
-            return opt["link"]
-    # Fallback to job's google_jobs_url or 'share_link'
-    return job.get("share_link") or job.get("google_jobs_url") or ""
-
-def normalize_job(job: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, Any]:
-    title = job.get("title", "").strip()
-    company = job.get("company_name", "").strip()
-    location = job.get("location", "").strip()
-    desc = (detail.get("job_description") or job.get("description") or "").strip()
-    link = extract_apply_link(job)
-    has_support = contains_keywords(title) or contains_keywords(desc)
-    return {
-        "Company Name": company,
-        "Job Title": title,
-        "Location": location,
-        "Visa/Relocation Sponsorship (Yes/No)": "Yes" if has_support else "No",
-        "Application Link": link,
-        "_job_id": job.get("job_id", ""),
-        "_title": title.lower(),
-        "_company": company.lower(),
-        "_raw_desc": desc
-    }
-
-def search_all() -> pd.DataFrame:
-    if not SERPAPI_KEY:
-        raise RuntimeError("Missing SERPAPI_KEY environment variable.")
-    all_rows: List[Dict[str, Any]] = []
-    for region in REGIONS:
-        loc = region["location"]
-        for term in SEARCH_TERMS:
-            logger.info(f"Querying: {term} @ {loc}")
-            # fetch first batch
-            start = 0
-            fetched = 0
-            while fetched < MAX_RESULTS_PER_QUERY:
-                try:
-                    data = serpapi_jobs_search(term, loc, SERPAPI_KEY, start=start)
-                except Exception as e:
-                    logger.warning(f"Search error at start={start}: {e}")
-                    break
-                jobs = data.get("jobs_results", []) or []
-                if not jobs:
-                    break
-                for job in jobs:
-                    if not posted_within_limit(job, DAYS_BACK_LIMIT):
-                        continue
-                    job_id = job.get("job_id")
-                    detail = {}
-                    if job_id:
-                        try:
-                            detail = serpapi_job_detail(job_id, SERPAPI_KEY)
-                            time.sleep(0.5)  # be gentle
-                        except Exception as e:
-                            logger.warning(f"Detail fetch failed for {job_id}: {e}")
-                    row = normalize_job(job, detail)
-                    if STRICT_MATCH and row["Visa/Relocation Sponsorship (Yes/No)"] != "Yes":
-                        continue
-                    all_rows.append(row)
-                fetched += len(jobs)
-                start += len(jobs)
-                time.sleep(0.8)  # throttle between pages
-    if not all_rows:
-        return pd.DataFrame(columns=COLUMNS)
-    df = pd.DataFrame(all_rows)
-    # Deduplicate by job_id or title+company
-    if "_job_id" in df.columns:
-        df = df.sort_values(by=["_job_id"]).drop_duplicates(subset=["_job_id"], keep="first")
-    df = df.drop_duplicates(subset=["_title", "_company"], keep="first")
-    df = df[COLUMNS]
-    # Keep only rows marked Yes for final output
-    df = df[df["Visa/Relocation Sponsorship (Yes/No)"] == "Yes"].reset_index(drop=True)
-    return df
-
-def df_to_html_table(df: pd.DataFrame) -> str:
-    if df.empty:
-        return "<p>No matching roles found today with visa/relocation support.</p>"
-    # Simple clean table
-    html = ['<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial, sans-serif;font-size:13px;">']
-    # Header
-    html.append("<tr>" + "".join(f"<th align='left'>{col}</th>" for col in df.columns) + "</tr>")
-    # Rows
-    for _, row in df.iterrows():
-        html.append("<tr>" + "".join(f"<td>{row[col]}</td>" for col in df.columns) + "</tr>")
-    html.append("</table>")
-    return "\n".join(html)
-
-def send_email(subject: str, html_body: str):
-    if not (SENDER_EMAIL and SMTP_PASSWORD and RECIPIENTS):
-        raise RuntimeError("Missing email configuration (SENDER_EMAIL / SMTP_PASSWORD / RECIPIENT_EMAILS).")
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = f"{SENDER_NAME} <{SENDER_EMAIL}>"
-    msg["To"] = ", ".join(RECIPIENTS)
-    part = MIMEText(html_body, "html")
-    msg.attach(part)
-    context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, context=context) as server:
-        server.login(SMTP_USERNAME, SMTP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECIPIENTS, msg.as_string())
-
-def main():
-    logger.info("Starting job search...")
-    df = search_all()
-    today_ist = datetime.utcnow().replace(tzinfo=timezone.utc) + timedelta(hours=5, minutes=30)
-    date_str = today_ist.strftime("%Y-%m-%d")
-    subject = f"Daily Roles with Visa/Relocation Support — {date_str}"
-    html_body = f"""
-    <p>Below are today's matches (visa sponsorship or relocation support mentioned):</p>
-    {df_to_html_table(df)}
-    <p>Search terms: {', '.join(SEARCH_TERMS)}</p>
-    <p>Regions: {', '.join([r['label'] for r in REGIONS])}</p>
-    <p><em>Automated by job_finder.py</em></p>
-    """
-    # Save CSV snapshot
-    out_csv = f"results_{date_str}.csv"
-    df.to_csv(out_csv, index=False)
-    logger.info(f"Saved: {out_csv}")
-    # Email
-    send_email(subject, html_body)
-    logger.info("Email sent.")
-    return 0
-
-if __name__ == "__main__":
-    sys.exit(main())
-
-
+# ---------------------------
+# Safe int getter for env vars
+# ---------------------------
 def getenv_int(name: str, default: int) -> int:
     val = os.getenv(name, "")
     try:
@@ -255,11 +15,107 @@ def getenv_int(name: str, default: int) -> int:
     except (TypeError, ValueError):
         return default
 
+# ---------------------------
+# Load configuration
+# ---------------------------
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")
+
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+SENDER_NAME = os.getenv("SENDER_NAME", "Job Bot").replace("_", " ")
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = getenv_int("SMTP_PORT", 465)
+SMTP_USERNAME = os.getenv("SMTP_USERNAME")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+RECIPIENT_EMAILS = os.getenv("RECIPIENT_EMAILS", "").split(",")
+
 MAX_RESULTS_PER_QUERY = getenv_int("MAX_RESULTS_PER_QUERY", 20)
 DAYS_BACK_LIMIT = getenv_int("DAYS_BACK_LIMIT", 14)
-SMTP_PORT = getenv_int("SMTP_PORT", 465)
+STRICT_MATCH = os.getenv("STRICT_MATCH", "false").lower() == "true"
 
+# Debug logging for safety
+print("DEBUG ENV VALUES:",
+      "MAX_RESULTS_PER_QUERY=", repr(os.getenv("MAX_RESULTS_PER_QUERY")),
+      "DAYS_BACK_LIMIT=", repr(os.getenv("DAYS_BACK_LIMIT")),
+      "SMTP_PORT=", repr(os.getenv("SMTP_PORT")))
 
-print("SMTP_PORT:", repr(os.getenv("SMTP_PORT")))
-print("MAX_RESULTS_PER_QUERY:", repr(os.getenv("MAX_RESULTS_PER_QUERY")))
-print("DAYS_BACK_LIMIT:", repr(os.getenv("DAYS_BACK_LIMIT")))
+# ---------------------------
+# Job search configuration
+# ---------------------------
+QUERIES = [
+    "Agile Program Manager jobs",
+    "Program Manager jobs",
+    "Scrum Master jobs",
+    "Project Manager jobs"
+]
+
+REGIONS = [
+    "United States",
+    "Europe",
+    "Australia",
+    "New Zealand"
+]
+
+# ---------------------------
+# Search jobs using SerpAPI
+# ---------------------------
+def search_jobs(query, location):
+    url = "https://serpapi.com/search"
+    params = {
+        "engine": "google_jobs",
+        "q": query,
+        "location": location,
+        "hl": "en",
+        "api_key": SERPAPI_KEY
+    }
+    resp = requests.get(url, params=params)
+    data = resp.json()
+
+    jobs = []
+    for j in data.get("jobs_results", []):
+        jobs.append({
+            "Company": j.get("company_name", ""),
+            "Job Title": j.get("title", ""),
+            "Location": j.get("location", ""),
+            "Visa/Relocation Sponsorship": "Yes" if "visa" in j.get("description", "").lower() or "relocation" in j.get("description", "").lower() else "No",
+            "Application Link": j.get("apply_options", [{}])[0].get("link", "")
+        })
+    return jobs
+
+# ---------------------------
+# Send email
+# ---------------------------
+def send_email(job_data):
+    df = pd.DataFrame(job_data)
+    if df.empty:
+        body = "<p>No new job postings found today.</p>"
+    else:
+        body = df.to_html(index=False, escape=False)
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Daily Job Alerts"
+    msg["From"] = f"{SENDER_NAME} <{SENDER_EMAIL}>"
+    msg["To"] = ", ".join(RECIPIENT_EMAILS)
+
+    part = MIMEText(body, "html")
+    msg.attach(part)
+
+    with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.sendmail(SENDER_EMAIL, RECIPIENT_EMAILS, msg.as_string())
+
+# ---------------------------
+# Main
+# ---------------------------
+if __name__ == "__main__":
+    all_jobs = []
+    for query in QUERIES:
+        for region in REGIONS:
+            print(f"Searching: {query} in {region}")
+            jobs = search_jobs(query, region)
+            all_jobs.extend(jobs)
+
+    # Filter only visa/relocation supported jobs
+    filtered = [j for j in all_jobs if j["Visa/Relocation Sponsorship"] == "Yes"]
+
+    send_email(filtered)
+    print(f"✅ Sent {len(filtered)} jobs via email")
